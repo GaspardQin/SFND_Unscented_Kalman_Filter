@@ -22,13 +22,14 @@ class UKF {
    */
   void ProcessMeasurement(MeasurementPackage meas_package);
 
-  void AugmentedSigmaPoints(MatrixXd& Xsig_aug);
-  void SigmaPointPrediction(MatrixXd& Xsig_aug, double delta_t);
-  void PredictMeanAndCovariance(VectorXd& x_pred, MatrixXd& P_pred);
-  void PredictRadarMeasurement(VectorXd& z_pred, MatrixXd& Zsig, MatrixXd& S);
-  void UpdateState(MatrixXd& Zsig, VectorXd& z_pred,MatrixXd& S, VectorXd& mesuarement_z);
-  void PredictLidarMeasurement(VectorXd& z_pred, MatrixXd& Zsig, MatrixXd& S);
-  double UKF::computeNIS(VectorXd& measurement_z, VectorXd& z_pred, MatrixXd& S);
+  void AugmentedSigmaPoints(Eigen::MatrixXd& Xsig_aug);
+  void SigmaPointPrediction(Eigen::MatrixXd& Xsig_aug, double delta_t);
+  void PredictMeanAndCovariance(Eigen::VectorXd& x_pred, Eigen::MatrixXd& P_pred);
+  void PredictRadarMeasurement(Eigen::VectorXd& z_pred, Eigen::MatrixXd& Zsig, Eigen::MatrixXd& S);
+  void UpdateState(Eigen::MatrixXd& Zsig, Eigen::VectorXd& z_pred,Eigen::MatrixXd& S, Eigen::VectorXd& mesuarement_z);
+  void PredictLidarMeasurement(Eigen::VectorXd& z_pred, Eigen::MatrixXd& Zsig, Eigen::MatrixXd& S);
+  double computeNIS(Eigen::VectorXd& measurement_z, Eigen::VectorXd& z_pred, Eigen::MatrixXd& S);
+  static void PlotNIS();
 
   /**
    * Prediction Predicts sigma points, the state, and the state covariance
@@ -103,6 +104,9 @@ class UKF {
 
   // Sigma point spreading parameter
   double lambda_;
+
+  static std::vector<double> lidar_nis_, radar_nis_;
 };
+
 
 #endif  // UKF_H

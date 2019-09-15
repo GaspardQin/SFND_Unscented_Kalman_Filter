@@ -1,9 +1,15 @@
 #include "ukf.h"
 #include "Eigen/Dense"
 #include <iostream>
+
+// visualize the NIS
+#include "matplotlibcpp.h"
+namespace plt = matplotlibcpp;
+
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
-
+std::vector<double> UKF::lidar_nis_; 
+std::vector<double> UKF::radar_nis_; 
 /**
  * Initializes Unscented Kalman filter
  */
@@ -12,7 +18,7 @@ UKF::UKF() {
   use_laser_ = true;
 
   // if this is false, radar measurements will be ignored (except during init)
-  use_radar_ = true;
+  use_radar_ = false;
 
   // initial state vector
   x_ = VectorXd(5);
@@ -63,7 +69,14 @@ UKF::UKF() {
   weights_.setOnes();
   weights_ *= 0.5/(lambda_+n_aug_);
   weights_(0) = lambda_/(lambda_+n_aug_);
-
+  P_ = MatrixXd(n_x_, n_x_);
+  P_.setIdentity();
+  P_(0,0) = std_laspx_ * std_laspx_;
+  P_(1,1) = std_laspy_ * std_laspy_;
+  P_(2,2) = std_radr_ * std_radr_;
+  P_(3,3) = std_radphi_ * std_radphi_;
+  P_(4,4) = std_radrd_ * std_radrd_;
+  
 }
 
 UKF::~UKF() {}
@@ -96,14 +109,22 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   else{
     // predict then update
     double delta_t = static_cast<double>(meas_package.timestamp_ - time_us_) / 1e6;
-    Prediction(delta_t);
-    if(meas_package.sensor_type_ == meas_package.LASER){
+    
+    
+    if(meas_package.sensor_type_ == meas_package.LASER && use_laser_){
+      Prediction(delta_t);
       UpdateLidar(meas_package);
+      time_us_ = meas_package.timestamp_;
     }
-    else{
+    else if(meas_package.sensor_type_ == meas_package.RADAR && use_radar_){
+      Prediction(delta_t);
       UpdateRadar(meas_package);
+      time_us_ = meas_package.timestamp_;
     }
+    
   }
+
+  
 }
 
 void UKF::SigmaPointPrediction(MatrixXd& Xsig_aug, double delta_t) {
@@ -111,13 +132,14 @@ void UKF::SigmaPointPrediction(MatrixXd& Xsig_aug, double delta_t) {
 
   // create matrix with predicted sigma points as columns
   Xsig_pred_ = MatrixXd(n_x_, 2 * n_aug_ + 1);
-
+  Xsig_pred_.setZero();
   // predict sigma points
   for(size_t i=0; i<2*n_aug_+1; i++){
     if(fabs(Xsig_aug(4,i)) < 1e-8){
         // avoid division by zero
         Xsig_pred_(0,i) = Xsig_aug(0,i) + Xsig_aug(2,i)*cos(Xsig_aug(3,i))*delta_t;
         Xsig_pred_(1,i) = Xsig_aug(1,i) + Xsig_aug(2,i)*sin(Xsig_aug(3,i))*delta_t;
+        
     }
     else{
         Xsig_pred_(0,i) = Xsig_aug(0,i) + Xsig_aug(2,i) / Xsig_aug(4,i) * (sin(Xsig_aug(3,i) + Xsig_aug(4,i) * delta_t) - sin(Xsig_aug(3,i)));
@@ -137,8 +159,6 @@ void UKF::SigmaPointPrediction(MatrixXd& Xsig_aug, double delta_t) {
 }
 void UKF::PredictMeanAndCovariance(VectorXd& x_pred, MatrixXd& P_pred) {
 
-  // create vector for weights
-  VectorXd weights = VectorXd(2*n_aug_+1);
 
   // create vector for predicted state
   x_pred = VectorXd(n_x_);
@@ -146,40 +166,35 @@ void UKF::PredictMeanAndCovariance(VectorXd& x_pred, MatrixXd& P_pred) {
   // create covariance matrix for prediction
   P_pred = MatrixXd(n_x_, n_x_);
 
-  // set weights
-  weights(0) = lambda_ / double(lambda_ + n_aug_);
-  for(size_t i=1; i<2*n_aug_+1; ++i){
-      weights(i) = 1.0 / (2.0 * (lambda_ + n_aug_));
-  }
-  
   // predict state mean
   x_pred.setZero();
   for(size_t i=0; i<2*n_aug_+1; ++i){
-      x_pred += weights(i) * Xsig_pred_.col(i);
+      x_pred += weights_(i) * Xsig_pred_.col(i);
   }
   
   // predict state covariance matrix
   P_pred.setZero();
   for(size_t i=0; i<2*n_aug_+1; ++i){
-      P_pred += weights(i) * (Xsig_pred_.col(i) - x_pred) * (Xsig_pred_.col(i) -x_pred).transpose();
+      P_pred += weights_(i) * (Xsig_pred_.col(i) - x_pred) * (Xsig_pred_.col(i) -x_pred).transpose();
   }
 
 }
-void UKF::AugmentedSigmaPoints(MatrixXd& x_aug) {
+void UKF::AugmentedSigmaPoints(MatrixXd& Xsig_aug) {
 
   // create augmented mean vector
-  x_aug = VectorXd(7);
+  VectorXd x_aug = VectorXd(7);
 
   // create augmented state covariance
   MatrixXd P_aug = MatrixXd(7, 7);
 
   // create sigma point matrix
-  MatrixXd Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
+  Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
 
   // create augmented mean state
+  x_aug.setZero();
   x_aug.head(n_x_) = x_;
-  x_aug.tail<2>().setZero();
   
+  std::cout<<"x_aug: \n"<<x_aug<<std::endl;
   // create augmented covariance matrix
   P_aug.setZero();
   P_aug.block(0,0,n_x_,n_x_) = P_;
@@ -187,15 +202,16 @@ void UKF::AugmentedSigmaPoints(MatrixXd& x_aug) {
   P_aug(n_x_+1, n_x_+1) = pow(std_yawdd_,2);
   
   // create square root matrix
+  std::cout<<"P_aug: \n"<<P_aug<<std::endl;
   MatrixXd A = P_aug.llt().matrixL();
-  
+  std::cout<<"A: \n"<<A<<std::endl;
   // create augmented sigma points
   for(size_t i=0; i < 2*n_aug_+1; i++){
       Xsig_aug.col(i) = x_aug;
   }
   Xsig_aug.block(0,1, n_aug_, n_aug_) += sqrt(lambda_ + n_aug_) * A;
   Xsig_aug.block(0,n_aug_+1,n_aug_, n_aug_) -= sqrt(lambda_ + n_aug_) * A;
-
+  std::cout<<"Xsig_aug: \n"<<Xsig_aug<<std::endl;
 }
 
 void UKF::Prediction(double delta_t) {
@@ -206,7 +222,13 @@ void UKF::Prediction(double delta_t) {
    */
   MatrixXd Xsig_aug;
   AugmentedSigmaPoints(Xsig_aug);
+  
   SigmaPointPrediction(Xsig_aug, delta_t);
+  if(Xsig_aug.hasNaN()){
+    std::cout<<"P_: \n"<<P_<<std::endl;
+    std::cout<<"Xsig_aug: \n"<<Xsig_aug<<std::endl;
+    
+  }
   VectorXd x_pred; MatrixXd P_pred;
   PredictMeanAndCovariance(x_pred, P_pred);
   x_ = x_pred;
@@ -225,7 +247,8 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   UpdateState(Zsig, z_pred, S, meas_package.raw_measurements_);
 
   double NIS = computeNIS(meas_package.raw_measurements_, z_pred, S);
-  std::cout<<"Lidar NIS: "<<NIS<<std::endl;
+  //std::cout<<"Lidar NIS: "<<NIS<<std::endl;
+  UKF::lidar_nis_.push_back(NIS);
 }
 
 
@@ -243,7 +266,8 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   UpdateState(Zsig, z_pred, S, meas_package.raw_measurements_);
 
   double NIS = computeNIS(meas_package.raw_measurements_, z_pred, S);
-  std::cout<<"Radar NIS: "<<NIS<<std::endl;
+  //std::cout<<"Radar NIS: "<<NIS<<std::endl;
+  UKF::radar_nis_.push_back(NIS);
 }
 
 double UKF::computeNIS(VectorXd& measurement_z, VectorXd& z_pred, MatrixXd& S){
@@ -317,9 +341,8 @@ void UKF::PredictLidarMeasurement(VectorXd& z_pred, MatrixXd& Zsig, MatrixXd& S)
   for(size_t i=0; i<2*n_aug_+1; ++i){
       S += weights_(i) * (Zsig.col(i) - z_pred) * (Zsig.col(i) - z_pred).transpose();
   }
-  S(0,0) += std_radr_ * std_radr_;
-  S(1,1) += std_radphi_ * std_radphi_;
-  S(2,2) += std_radrd_ * std_radrd_;
+  S(0,0) += std_laspx_ * std_laspx_;
+  S(1,1) += std_laspy_ * std_laspy_;
   
 }
 
@@ -341,4 +364,36 @@ void UKF::UpdateState(MatrixXd& Zsig, VectorXd& z_pred,MatrixXd& S, VectorXd& me
   // update state mean and covariance matrix
   x_ += K*(mesuarement_z - z_pred);
   P_ -= K * S * K.transpose();
+}
+
+void UKF::PlotNIS(){
+  plt::figure_size(1200, 780);
+  unsigned int size = std::min(UKF::lidar_nis_.size(), UKF::radar_nis_.size());
+
+  std::cout<<"size: " <<size<<std::endl;
+  unsigned int start_idx = 10;
+  std::vector<double> lidar_nis(UKF::lidar_nis_.begin() + start_idx, UKF::lidar_nis_.begin() + size);
+  std::vector<double> radar_nis(UKF::radar_nis_.begin() + start_idx, UKF::radar_nis_.begin() + size);
+  std::vector<double> axis_x(size - start_idx);
+  std::vector<double> lidar_nis_tresh(size - start_idx, 5.991);   // 5% for 2 dimensions
+  std::vector<double> radar_nis_tresh(size - start_idx, 7.815);   // 5% for 3 dimensions
+  for(unsigned int i=0; i<axis_x.size(); i++){
+    axis_x[i] = static_cast<double>(i + start_idx);
+  }
+  
+  plt::named_plot("lidar NIS",axis_x, lidar_nis, "b");
+  plt::named_plot("radar NIS",axis_x, radar_nis, "r");
+
+  plt::named_plot("lidar 5% line", axis_x, lidar_nis_tresh, "b--");
+  plt::named_plot("radar 5% line", axis_x, radar_nis_tresh, "r--");
+  /*
+  plt::plot(axis_x, lidar_nis, "b");
+  plt::plot(axis_x, radar_nis, "r");
+
+  plt::plot(axis_x, lidar_nis_tresh, "b--");
+  plt::plot(axis_x, radar_nis_tresh, "r--");
+  */
+  plt::title("NIS");
+  plt::legend();
+  plt::show();
 }
