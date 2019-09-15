@@ -18,7 +18,7 @@ UKF::UKF() {
   use_laser_ = true;
 
   // if this is false, radar measurements will be ignored (except during init)
-  use_radar_ = false;
+  use_radar_ = true;
 
   // initial state vector
   x_ = VectorXd(5);
@@ -27,10 +27,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 30;
+  std_a_ = 10;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 30;
+  std_yawdd_ = 10;
   
   /**
    * DO NOT MODIFY measurement noise values below.
@@ -194,7 +194,6 @@ void UKF::AugmentedSigmaPoints(MatrixXd& Xsig_aug) {
   x_aug.setZero();
   x_aug.head(n_x_) = x_;
   
-  std::cout<<"x_aug: \n"<<x_aug<<std::endl;
   // create augmented covariance matrix
   P_aug.setZero();
   P_aug.block(0,0,n_x_,n_x_) = P_;
@@ -202,16 +201,13 @@ void UKF::AugmentedSigmaPoints(MatrixXd& Xsig_aug) {
   P_aug(n_x_+1, n_x_+1) = pow(std_yawdd_,2);
   
   // create square root matrix
-  std::cout<<"P_aug: \n"<<P_aug<<std::endl;
   MatrixXd A = P_aug.llt().matrixL();
-  std::cout<<"A: \n"<<A<<std::endl;
   // create augmented sigma points
   for(size_t i=0; i < 2*n_aug_+1; i++){
       Xsig_aug.col(i) = x_aug;
   }
   Xsig_aug.block(0,1, n_aug_, n_aug_) += sqrt(lambda_ + n_aug_) * A;
   Xsig_aug.block(0,n_aug_+1,n_aug_, n_aug_) -= sqrt(lambda_ + n_aug_) * A;
-  std::cout<<"Xsig_aug: \n"<<Xsig_aug<<std::endl;
 }
 
 void UKF::Prediction(double delta_t) {
@@ -224,11 +220,6 @@ void UKF::Prediction(double delta_t) {
   AugmentedSigmaPoints(Xsig_aug);
   
   SigmaPointPrediction(Xsig_aug, delta_t);
-  if(Xsig_aug.hasNaN()){
-    std::cout<<"P_: \n"<<P_<<std::endl;
-    std::cout<<"Xsig_aug: \n"<<Xsig_aug<<std::endl;
-    
-  }
   VectorXd x_pred; MatrixXd P_pred;
   PredictMeanAndCovariance(x_pred, P_pred);
   x_ = x_pred;
