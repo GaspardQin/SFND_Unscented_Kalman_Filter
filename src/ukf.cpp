@@ -2,9 +2,14 @@
 #include "Eigen/Dense"
 #include <iostream>
 
+//#define VISUALIZE_NIS
+
+#ifdef VISUALIZE_NIS
 // visualize the NIS
 #include "matplotlibcpp.h"
 namespace plt = matplotlibcpp;
+#endif
+
 
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
@@ -358,6 +363,7 @@ void UKF::UpdateState(MatrixXd& Zsig, VectorXd& z_pred,MatrixXd& S, VectorXd& me
 }
 
 void UKF::PlotNIS(){
+  #ifdef VISUALIZE_NIS
   plt::figure_size(1200, 780);
   unsigned int size = std::min(UKF::lidar_nis_.size(), UKF::radar_nis_.size());
 
@@ -387,4 +393,5 @@ void UKF::PlotNIS(){
   plt::title("NIS");
   plt::legend();
   plt::show();
+  #endif
 }
